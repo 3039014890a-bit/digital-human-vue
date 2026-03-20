@@ -2,7 +2,7 @@
   <div class="app-container">
     <!-- 背景图 (使用了一张古风人物的占位图) -->
     <div class="background-wrapper">
-      <img src="https://images.unsplash.com/photo-1599839619722-39751411ea63?q=80&w=800&auto=format&fit=crop" class="bg-image" alt="background" />
+      <img src="https://jyt.tqingdao.com/attachment/images/2026/03/20/image_1773973044_J9I8I1R0.jpg" class="bg-image" alt="background" />
       <div class="bg-overlay"></div>
     </div>
 
@@ -458,8 +458,8 @@ onUnmounted(() => {
 .chat-container {
   width: 100%;
   max-width: 380px; /* 限制最大宽度，右侧悬浮 */
-  background: rgba(20, 20, 20, 0.75);
-  backdrop-filter: blur(16px);
+  /* background: rgba(20, 20, 20, 0.75); */
+  /* backdrop-filter: blur(16px); */
   border-radius: 24px;
   display: flex;
   flex-direction: column;
@@ -473,7 +473,7 @@ onUnmounted(() => {
   .chat-container {
     width: 100%;
     max-width: 100%;
-    background: rgba(20, 20, 20, 0.85);
+    /* background: rgba(20, 20, 20, 0.85); */
   }
   .main-content {
     padding: 15px;
