@@ -13,21 +13,13 @@
 
     <!-- 摄像头预览区域 (右上角) -->
     <div class="camera-preview" v-show="isConnected && isCameraOn">
-      <video ref="localVideoRef" autoplay playsinline muted></video>
-      <canvas ref="captureCanvasRef" style="display: none;"></canvas>
-      <div class="capture-overlay" v-if="isCapturing">
-        <div class="capture-flash"></div>
-        <span>正在分析...</span>
-      </div>
+      <div id="local-player"></div>
     </div>
 
     <!-- 摄像头控制按钮 (悬浮在右上角摄像头下方) -->
     <div class="camera-controls" v-if="isConnected">
       <div class="camera-toggle" @click="toggleCamera">
         {{ isCameraOn ? '关闭摄像头' : '开启摄像头' }}
-      </div>
-      <div class="camera-capture-btn" @click="captureAndAnalyze" v-show="isCameraOn">
-        📷 拍照分析
       </div>
     </div>
 
@@ -177,18 +169,14 @@ const showSettings = ref(false);
 const currentAsrText = ref('');
 const messages = ref<Message[]>([]);
 const messageListRef = ref<HTMLElement | null>(null);
-const localVideoRef = ref<HTMLVideoElement | null>(null);
-const captureCanvasRef = ref<HTMLCanvasElement | null>(null);
 const interruptKeywords = ref(['大阳山助手', '你好助手', '助手']);
 const newKeyword = ref('');
 const isAiSpeaking = ref(false); // AI是否正在说话
 const interruptedMessage = ref(''); // 被打断的消息提示
-const isCapturing = ref(false); // 是否正在捕获分析图像
 const isAiThinking = ref(false); // 是否正在等待 AI 开始回复，用于锁定用户输入
 
 let client: RealtimeClient | null = null;
 let currentAiMessageId = '';
-let localMediaStream: MediaStream | null = null;
 
 const config = {
   accessToken: 'pat_3l2YLpNLbN5dbASKYcntLOvxHJ39owN7J6OcrHSbWszHwucxkzmitavX1M9PemHG', 
@@ -240,6 +228,10 @@ const initClient = async () => {
       connectorId: config.connectorId,
       allowPersonalAccessTokenInBrowser: true,
       debug: true,
+      videoConfig: {
+        renderDom: 'local-player',
+        videoOnDefault: false,
+      },
       
       // --- AI 降噪与语音增强 ---
       suppressStationaryNoise: true,     // 开启静态噪声抑制（过滤空调、风扇等持续噪音）
@@ -252,12 +244,6 @@ const initClient = async () => {
 
       if (eventName === EventNames.CONNECTED) {
         isConnected.value = true;
-        nextTick(() => {
-          // 如果摄像头已开启,显示视频流
-          if (localVideoRef.value && localMediaStream) {
-            localVideoRef.value.srcObject = localMediaStream;
-          }
-        });
 
         // 发送事件配置关键词打断
         // 根据文档，WebSocket 场景用 chat.update，RTC 音视频场景用 session.update
@@ -348,11 +334,8 @@ const initClient = async () => {
         isConnected.value = false;
         isListening.value = false;
         isAiThinking.value = false;
+        isCameraOn.value = false;
         currentAsrText.value = '';
-        if (localMediaStream) {
-          localMediaStream.getTracks().forEach(track => track.stop());
-          localMediaStream = null;
-        }
       }
 
       // 用户开始说话
@@ -477,98 +460,17 @@ const toggleConnect = async () => {
 };
 
 const toggleCamera = async () => {
-  if (isCameraOn.value) {
-    // 关闭摄像头
-    if (localMediaStream) {
-      const videoTrack = localMediaStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.stop();
-        localMediaStream = null;
-      }
-    }
-    isCameraOn.value = false;
-    if (localVideoRef.value) {
-      localVideoRef.value.srcObject = null;
-    }
-  } else {
-    // 开启摄像头
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          facingMode: 'user'
-        },
-        audio: false
-      });
-
-      localMediaStream = stream;
-      if (localVideoRef.value) {
-        localVideoRef.value.srcObject = stream;
-      }
-      isCameraOn.value = true;
-    } catch (error) {
-      console.error('获取摄像头失败:', error);
-      alert('无法获取摄像头权限，请检查设备设置');
-    }
-  }
-};
-
-// 捕获当前摄像头帧并分析
-const captureAndAnalyze = async () => {
-  if (!localVideoRef.value || !localVideoRef.value.srcObject || !captureCanvasRef.value) {
-    alert('摄像头未开启');
+  if (!client || !isConnected.value) {
+    alert('请先连接后再操作摄像头');
     return;
   }
-
   try {
-    isCapturing.value = true;
-
-    // 等待一帧渲染完成
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    const video = localVideoRef.value;
-    const canvas = captureCanvasRef.value;
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx) {
-      throw new Error('无法获取Canvas上下文');
-    }
-
-    // 设置画布尺寸
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    // 绘制当前视频帧
-    ctx.drawImage(video, 0, 0);
-
-    // 通过文本消息发送图片识别请求
-    const imagePrompt = `[图片识别] 请分析这张图片的内容。`;
-    messages.value.push({
-      id: `user_${Date.now()}`,
-      role: 'user',
-      content: imagePrompt
-    });
-
-    scrollToBottom();
-
-    // 注意: 当前Coze Realtime API主要处理语音,图像识别需要通过其他方式
-    // 这里我们通过文本消息提醒用户,实际图像识别需要调用Coze的多模态API
-    messages.value.push({
-      id: `ai_${Date.now()}`,
-      role: 'assistant',
-      content: '⚠️ 提示: 图像识别功能需要使用Coze的多模态API。当前项目使用的是Realtime语音API,主要处理语音对话。\n\n如需实现图像识别功能,需要:\n1. 配置Coze Bot支持视觉理解能力\n2. 调用图像识别API接口\n3. 将分析结果集成到对话中\n\n您可以在Coze平台为Bot添加视觉理解插件或使用多模态对话API。'
-    });
-
-    scrollToBottom();
-
+    const nextCameraState = !isCameraOn.value;
+    await client.setVideoEnable(nextCameraState);
+    isCameraOn.value = nextCameraState;
   } catch (error) {
-    console.error('图像捕获失败:', error);
-    alert('图像捕获失败: ' + (error as Error).message);
-  } finally {
-    setTimeout(() => {
-      isCapturing.value = false;
-    }, 500);
+    console.error('切换摄像头失败:', error);
+    alert('摄像头切换失败，请检查设备权限');
   }
 };
 
@@ -759,7 +661,12 @@ const handleKeywordInterrupt = async () => {
   background-color: #000;
 }
 
-.camera-preview video {
+#local-player {
+  width: 100%;
+  height: 100%;
+}
+
+:deep(#local-player video) {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -790,55 +697,9 @@ const handleKeywordInterrupt = async () => {
   transition: all 0.3s ease;
 }
 
-.camera-toggle:hover,
-.camera-capture-btn:hover {
+.camera-toggle:hover {
   background: rgba(0, 0, 0, 0.8);
   transform: scale(1.05);
-}
-
-.camera-capture-btn {
-  background: rgba(0, 122, 255, 0.8);
-  color: #fff;
-  padding: 8px 16px;
-  border-radius: 16px;
-  font-size: 13px;
-  cursor: pointer;
-  border: 1px solid rgba(0, 122, 255, 0.5);
-  backdrop-filter: blur(4px);
-  text-align: center;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
-}
-
-/* 捕获遮罩层 */
-.capture-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 8px;
-  color: #fff;
-  font-size: 14px;
-  z-index: 10;
-}
-
-.capture-flash {
-  animation: flash 0.5s ease-out;
-}
-
-@keyframes flash {
-  0% {
-    background: rgba(255, 255, 255, 0.9);
-  }
-  100% {
-    background: transparent;
-  }
 }
 
 /* 主内容区 */
